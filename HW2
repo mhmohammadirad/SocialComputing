@@ -1,0 +1,66 @@
+WITH comments_count AS (
+        SELECT post_id, COUNT(1) AS cnt
+        FROM comments
+        GROUP BY 1
+    ), reactions_count AS (
+        SELECT post_id, COUNT(1) AS cnt
+        FROM reactions
+        GROUP BY 1
+    )
+SELECT cc.post_id, cc.cnt AS comments, rc.cnt AS reactions,
+       cc.cnt + COALESCE(rc.cnt, 0) AS total
+FROM comments_count cc
+    FULL JOIN reactions_count rc ON cc.post_id = rc.post_id
+ORDER BY 4 DESC
+LIMIT 3;
+
+
+WITH cte AS (
+        SELECT post_id, posts.created_at AS post_created,
+            MIN(comments.created_at) AS first_comment,
+            MAX(comments.created_at) AS last_comment,
+            24 * (JULIANDAY(MIN(comments.created_at)) - JULIANDAY(posts.created_at)) AS first_comment_diff,
+            24 * (JULIANDAY(MAX(comments.created_at)) - JULIANDAY(posts.created_at)) AS last_comment_diff,
+            COUNT(1) AS cnt
+        FROM posts
+            JOIN comments ON posts.id = comments.post_id
+        GROUP BY 1, 2
+)
+SELECT AVG(first_comment_diff) AS average_hours_first_comment,
+       AVG(last_comment_diff) AS average_hours_last_comment
+FROM cte;
+
+
+
+WITH comment_engagement AS (
+    SELECT posts.user_id AS author_id,
+           comments.user_id AS engager_id,
+           COUNT(1) AS cnt
+    FROM comments
+        JOIN posts ON comments.post_id = posts.id
+    GROUP BY 1, 2
+),
+reaction_engagement AS (
+    SELECT posts.user_id AS author_id,
+           reactions.user_id AS engager_id,
+           COUNT(1) AS cnt
+    FROM reactions
+    JOIN posts ON reactions.post_id = posts.id
+    GROUP BY 1, 2
+),
+all_engagement AS (
+    SELECT author_id, engager_id, cnt FROM comment_engagement
+    UNION ALL
+    SELECT author_id, engager_id, cnt FROM reaction_engagement
+),
+pair_engagement AS (
+    SELECT CASE WHEN author_id < engager_id THEN author_id ELSE engager_id END AS user1,
+           CASE WHEN author_id < engager_id THEN engager_id ELSE author_id END AS user2,
+           SUM(cnt) AS total_engagement
+    FROM all_engagement
+    GROUP BY 1, 2
+)
+SELECT user1, user2, total_engagement
+FROM pair_engagement
+ORDER BY 3 DESC
+LIMIT 3;
